@@ -197,11 +197,14 @@
    * クロス投稿の行は閲覧数・いいねが IG+FB の合計で分けられないため、Instagram 側に1回だけ数える
    */
   async function metaContentStep(mode = 'all') {
+    const EMPTY = 'この期間のアクティビティはありません'
     const grid = await waitFor(() => {
       const g = document.querySelector('[role=grid]')
-      return g && g.querySelectorAll('[role=row]').length > 1 ? g : undefined
+      return g && (g.querySelectorAll('[role=row]').length > 1 || g.textContent.includes(EMPTY)) ? g : undefined
     })
     if (!grid) throw new Error('Meta「コンテンツ」画面の投稿一覧が見つかりません')
+    // 投稿の無い区間（7日ずつ読むので起こりうる）
+    if (grid.querySelectorAll('[role=row]').length <= 1) return { posts: [], oldest: -Infinity, crossPosted: 0, point: centerOf(grid) }
     const headers = [...grid.querySelectorAll('[role=columnheader]')].map((h) => clean(h.textContent))
     const col = {}
     headers.forEach((h, i) => {

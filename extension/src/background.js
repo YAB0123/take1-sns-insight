@@ -145,13 +145,28 @@ async function applyMetaPlacement(tabId, label) {
  * どのSNSも、レポートの集計期間から開くURLを組み立て直す。
  */
 
+/** 日本時間の日付 YYYY-MM-DD */
+const jstYmd = (ms) => new Date(ms + 9 * 3600000).toISOString().slice(0, 10)
+
+/*
+ * 投稿一覧は1か月分を開くと最も古い行が出てこない（件数が多いと末尾が切れる）ため、7日ずつに分けて読む。
+ * また一覧の期間は日本時間ではなく米国太平洋時間で絞り込まれ、初日の朝（JST 0〜16/17時）の投稿が漏れるので、
+ * 各区間とも1日前から開き、期間内かどうかは inPeriod（日本時間）で判定する。
+ */
+function metaContentWindows(req) {
+  const out = []
+  const end = jstStart(req.periodEnd)
+  for (let s = jstStart(req.periodStart); s <= end; s += 7 * DAY) {
+    out.push({ periodStart: jstYmd(s), periodEnd: jstYmd(Math.min(s + 6 * DAY, end)) })
+  }
+  return out
+}
+
 function metaUrl(base, page, platform, req) {
   const u = new URL(base)
   u.pathname = `/latest/insights/${page}`
   u.searchParams.set('platform', platform === 'instagram' ? 'Instagram' : 'Facebook')
-  // 投稿一覧の期間は日本時間ではなく米国太平洋時間で絞り込まれ、初日の朝（JST 0〜16/17時）の投稿が漏れる。
-  // 一覧だけ1日前から開き、期間内かどうかは inPeriod（日本時間）で判定する
-  const start = page === 'content' ? new Date(jstStart(req.periodStart) - DAY + 9 * 3600000).toISOString().slice(0, 10) : req.periodStart
+  const start = page === 'content' ? jstYmd(jstStart(req.periodStart) - DAY) : req.periodStart
   // Meta は time_range を二重にエンコードする（searchParams.set がもう一段エンコードする）
   u.searchParams.set('time_range', encodeURIComponent(JSON.stringify({ end: req.periodEnd, start })))
   if (page === 'people') u.searchParams.set('audience_tab', 'trends')
@@ -183,23 +198,28 @@ async function collectMeta(tabId, req, platforms, log) {
     }
   }
 
-  log('Meta: 投稿一覧を読み取り中…')
-  await open(tabId, metaUrl(req.urls.meta, 'content', platforms[0], req))
-  const all = await scrollMetaContent(tabId, req, 'all', log)
-  let posts = [...all.found.values()]
+  const byId = new Map()
+  for (const w of metaContentWindows(req)) {
+    const wreq = { ...req, ...w }
+    log(`Meta: 投稿一覧を読み取り中…（${w.periodStart}〜${w.periodEnd}）`)
+    await open(tabId, metaUrl(req.urls.meta, 'content', platforms[0], wreq))
+    const all = await scrollMetaContent(tabId, wreq, 'all', log)
+    let posts = [...all.found.values()]
 
-  // クロス投稿（IG+FB を1行で表示）があれば、「Instagramフィード」に絞り込んで Instagram 側の数値で読み直す
-  if (all.crossPosted > 0 && platforms.includes('instagram')) {
-    log(`Meta: クロス投稿 ${all.crossPosted}件を「Instagramフィード」で読み直し中…`)
-    await open(tabId, metaUrl(req.urls.meta, 'content', platforms[0], req))
-    if (await applyMetaPlacement(tabId, 'Instagramフィード')) {
-      const ig = await scrollMetaContent(tabId, req, 'igPlacement', log)
-      posts = [...posts.filter((p) => p.platform !== 'instagram'), ...ig.found.values()]
-    } else {
-      log('⚠ Meta: 「Instagramフィード」の絞り込みができず、クロス投稿の動画は取り込めませんでした')
+    // クロス投稿（IG+FB を1行で表示）があれば、「Instagramフィード」に絞り込んで Instagram 側の数値で読み直す
+    if (all.crossPosted > 0 && platforms.includes('instagram')) {
+      log(`Meta: クロス投稿 ${all.crossPosted}件を「Instagramフィード」で読み直し中…`)
+      await open(tabId, metaUrl(req.urls.meta, 'content', platforms[0], wreq))
+      if (await applyMetaPlacement(tabId, 'Instagramフィード')) {
+        const ig = await scrollMetaContent(tabId, wreq, 'igPlacement', log)
+        posts = [...posts.filter((p) => p.platform !== 'instagram'), ...ig.found.values()]
+      } else {
+        log('⚠ Meta: 「Instagramフィード」の絞り込みができず、クロス投稿の動画は取り込めませんでした')
+      }
     }
+    for (const p of posts) if (inPeriod(p.publishedAt, w.periodStart, w.periodEnd)) byId.set(p.id, p)
   }
-  for (const p of posts) {
+  for (const p of byId.values()) {
     if (out[p.platform] && inPeriod(p.publishedAt, req.periodStart, req.periodEnd)) out[p.platform].posts.push(p)
   }
   for (const pl of platforms) log(`${pl === 'instagram' ? 'Instagram' : 'Facebook'}: 期間内の投稿 ${out[pl].posts.length}件`)
