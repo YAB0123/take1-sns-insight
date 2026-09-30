@@ -1,0 +1,25 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "hosting": {
+    "public": "web/dist",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [{ "source": "**", "destination": "/index.html" }],
+    "headers": [
+      {
+        "source": "/r/**",
+        "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }]
+      }
+    ]
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": ["node_modules", ".git", "src", "*.log"],
+      "predeploy": ["npm --prefix \"$RESOURCE_DIR\" run build"]
+    }
+  ]
+}

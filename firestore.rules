@@ -1,0 +1,36 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // web/src/firebase.ts・functions/src/index.ts の ADMIN_EMAILS と揃えること
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email in ['yabu@snstake1.com'];
+    }
+
+    // 管理データ（クライアント・下書きを含む全レポート）は管理者だけ
+    match /clients/{clientId} {
+      allow read, write: if isAdmin();
+      match /reports/{reportId} {
+        allow read, write: if isAdmin();
+        // AI考察の作成依頼。依頼者は本人のメールアドレスしか名乗れない
+        match /jobs/{jobId} {
+          allow read: if isAdmin();
+          allow create: if isAdmin() && request.resource.data.requestedBy == request.auth.token.email;
+        }
+      }
+    }
+
+    // 公開用コピー。推測できないトークンを知っている人だけが読める。
+    // public コレクション自体の一覧取得はさせない（get のみ許可）
+    match /public/{token} {
+      allow get: if true;
+      allow write: if isAdmin();
+      match /reports/{reportId} {
+        allow read: if true;
+        allow write: if isAdmin();
+      }
+    }
+  }
+}

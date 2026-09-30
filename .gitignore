@@ -1,0 +1,13 @@
+node_modules
+/web/dist
+/functions/lib
+/web/.env*
+!/web/.env.example
+# クライアントの実データ（リポジトリに入れない）
+/scripts/*.xlsx
+/scripts/*.json
+/web/src/dev/*.json
+*.log
+
+# Firebase CLI のキャッシュ
+.firebase/

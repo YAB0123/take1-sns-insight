@@ -1,0 +1,20 @@
+@import 'tailwindcss';
+
+:root {
+  font-family: 'Hiragino Sans', 'Noto Sans JP', 'Yu Gothic UI', system-ui, sans-serif;
+  color: #0f172a;
+  background: #ffffff;
+  -webkit-font-smoothing: antialiased;
+}
+
+@page {
+  size: A4 landscape;
+  margin: 12mm;
+}
+
+@media print {
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

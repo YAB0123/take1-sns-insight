@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "SNSインサイト取込",
+  "version": "0.1.5",
+  "description": "Meta Business Suite・TikTok Studio・YouTube Studio の数値を読み取り、SNSインサイト管理ページへ渡します。",
+  "permissions": ["tabs", "scripting", "debugger"],
+  "host_permissions": ["https://business.facebook.com/*", "https://www.tiktok.com/*", "https://studio.youtube.com/*"],
+  "background": { "service_worker": "src/background.js" },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:5173/admin/*",
+        "http://127.0.0.1:5173/admin/*",
+        "https://take1-sns-insight.web.app/admin/*",
+        "https://take1-sns-insight.firebaseapp.com/admin/*"
+      ],
+      "js": ["src/bridge.js"],
+      "run_at": "document_start"
+    }
+  ]
+}
