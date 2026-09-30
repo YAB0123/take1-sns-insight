@@ -19,6 +19,15 @@ export function mergeCollected(report: Report, res: CollectResult, all: Report[]
     // 過去シートの投稿（当時の記録）は残し、期間の数値だけ更新する
     if (pl === 'instagram' && opts.keepSheetPosts && hasSheetPosts) d = { ...d, posts: prev!.posts }
     if (isPast) d = { ...d, account: { ...d.account, followers: prev?.account.followers } }
+    // 今回取れなかった値（古い月の Meta の純増など）は、前にある値（過去シート・手入力）を残す
+    if (prev) {
+      const account = { ...d.account }
+      for (const [k, v] of Object.entries(prev.account)) {
+        const key = k as keyof typeof account
+        if (account[key] == null && v != null) account[key] = v
+      }
+      d = { ...d, account }
+    }
     // 確認済みの「同じ動画の紐付け」は取り込み直しても残す（投稿 id は取り込みごとに同じ）
     const keep = new Map((prev?.posts ?? []).filter((p) => p.groupKey).map((p) => [p.id, p.groupKey]))
     d = { ...d, posts: d.posts.map((p) => (keep.has(p.id) ? { ...p, groupKey: keep.get(p.id) } : p)) }

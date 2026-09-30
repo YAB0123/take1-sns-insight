@@ -73,7 +73,8 @@ export function Backfill() {
           { urls: r.urls, periodStart: r.periodStart, periodEnd: r.periodEnd, targets: targetsFor(r) },
           (m) => set(r.id, { state: 'running', message: m }),
         )
-        let next = mergeCollected(r, res, all)
+        // 過去シートから入れた Instagram の投稿（当時の記録）は残す（レポート画面の既定と同じ）
+        let next = mergeCollected(r, res, all, { keepSheetPosts: true })
         await saveReport(next)
         if (withMatch && Object.keys(next.platforms).length > 1) {
           set(r.id, { state: 'running', message: 'AIで同じ動画を紐付け中…' })
