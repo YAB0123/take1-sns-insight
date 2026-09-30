@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { applyGroups } from '../components/MatchEditor'
 import { auth } from '../firebase'
-import { getClient, listReports, requestMatch, saveReport } from '../lib/db'
+import { getClient, listReports, publishReport, requestInsight, requestMatch, saveReport } from '../lib/db'
 import { collect, pingExtension } from '../lib/extension'
 import { mergeCollected } from '../lib/merge'
 import type { Client, Platform, Report } from '../types'
@@ -18,7 +18,8 @@ function targetsFor(r: Report): Platform[] {
 
 /**
  * まだ数値の入っていないレポートを、新しい月から順にまとめて取り込む。
- * 新しいクライアントの初回（過去1年分）で使う。1か月あたり3〜4分。
+ * 新しいクライアントの初回（過去1年分）で使う。1か月あたり3〜5分。
+ * 「取込済の月も選んで取り直す」で、取込方法を直したあとの一括やり直しにも使う。
  */
 export function Backfill() {
   const { clientId = '' } = useParams()
@@ -27,6 +28,9 @@ export function Backfill() {
   const [status, setStatus] = useState<Record<string, Status>>({})
   const [extVersion, setExtVersion] = useState<string | null>(null)
   const [withMatch, setWithMatch] = useState(true)
+  const [redo, setRedo] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [withInsight, setWithInsight] = useState(false)
   const [running, setRunning] = useState(false)
   const stopRef = useRef(false)
 
@@ -44,13 +48,23 @@ export function Backfill() {
     return () => window.removeEventListener('beforeunload', warn)
   }, [running])
 
-  const pending = reports.filter((r) => !hasData(r)).sort((a, b) => b.periodStart.localeCompare(a.periodStart))
+  const pending = reports
+    .filter((r) => (redo ? selected.has(r.id) : !hasData(r)))
+    .sort((a, b) => b.periodStart.localeCompare(a.periodStart))
+  const toggle = (id: string) =>
+    setSelected((s) => {
+      const n = new Set(s)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
 
   async function run() {
     setRunning(true)
     stopRef.current = false
     let all = [...reports]
     const set = (id: string, s: Status) => setStatus((st) => ({ ...st, [id]: s }))
+    const collected: string[] = []
     for (const r of pending) {
       if (stopRef.current) break
       try {
@@ -69,6 +83,7 @@ export function Backfill() {
         }
         all = all.map((x) => (x.id === next.id ? next : x))
         setReports(all)
+        if (!res.errors.length) collected.push(next.id)
         const counts = PLATFORMS.filter((pl) => next.platforms[pl]).map((pl) => `${pl} ${next.platforms[pl]!.posts.length}件`)
         set(r.id, {
           state: res.errors.length ? 'error' : 'done',
@@ -76,6 +91,25 @@ export function Backfill() {
         })
       } catch (e) {
         set(r.id, { state: 'error', message: `⚠ ${(e as Error).message}` })
+      }
+    }
+    // 考察は先月の数値と比べるので、全部の月を取り込み終えてから作る。公開中の月は公開内容も更新する
+    if (withInsight && client) {
+      for (const id of collected) {
+        if (stopRef.current) break
+        const r = all.find((x) => x.id === id)!
+        try {
+          set(id, { state: 'running', message: 'AIで考察を作成中…' })
+          const insight = await requestInsight(r, auth.currentUser?.email ?? '', (m) => set(id, { state: 'running', message: m }))
+          let next: Report = { ...r, insight }
+          await saveReport(next)
+          if (next.status === 'published') next = await publishReport(client, next)
+          all = all.map((x) => (x.id === id ? next : x))
+          setReports(all)
+          set(id, { state: 'done', message: `考察を作成${next.status === 'published' ? '・公開内容を更新' : ''}` })
+        } catch (e) {
+          set(id, { state: 'error', message: `⚠ 考察: ${(e as Error).message}` })
+        }
       }
     }
     setRunning(false)
@@ -120,6 +154,14 @@ export function Backfill() {
           <input type="checkbox" checked={withMatch} onChange={(e) => setWithMatch(e.target.checked)} disabled={running} />
           取込後にAIで同じ動画を紐付ける
         </label>
+        <label className="flex items-center gap-1.5 text-sm text-slate-700">
+          <input type="checkbox" checked={withInsight} onChange={(e) => setWithInsight(e.target.checked)} disabled={running} />
+          全部取り込んだあとAIで考察を作り直す（公開中の月は公開内容も更新）
+        </label>
+        <label className="flex items-center gap-1.5 text-sm text-slate-700">
+          <input type="checkbox" checked={redo} onChange={(e) => setRedo(e.target.checked)} disabled={running} />
+          取込済の月も選んで取り直す
+        </label>
       </div>
 
       <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
@@ -142,7 +184,11 @@ export function Backfill() {
                     : 'bg-slate-100 text-slate-600'
             return (
               <li key={r.id} className="flex items-start justify-between gap-4 px-4 py-3">
-                <div>
+                <div className="flex items-start gap-2">
+                  {redo && (
+                    <input type="checkbox" className="mt-1.5" checked={selected.has(r.id)} onChange={() => toggle(r.id)} disabled={running} />
+                  )}
+                  <div>
                   <Link to={`/admin/clients/${client.id}/reports/${r.id}`} className="text-slate-900 hover:underline">
                     {r.label}
                   </Link>
@@ -150,6 +196,7 @@ export function Backfill() {
                     {r.periodStart} 〜 {r.periodEnd}
                   </span>
                   {s?.message && <div className="mt-0.5 text-xs text-slate-500">{s.message}</div>}
+                  </div>
                 </div>
                 <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${color}`}>{badge}</span>
               </li>
