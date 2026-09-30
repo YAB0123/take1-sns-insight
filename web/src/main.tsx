@@ -9,6 +9,7 @@ const AdminLayout = lazy(() => import('./pages/AdminLayout').then((m) => ({ defa
 const AdminHome = lazy(() => import('./pages/AdminHome').then((m) => ({ default: m.AdminHome })))
 const AdminClient = lazy(() => import('./pages/AdminClient').then((m) => ({ default: m.AdminClient })))
 const ReportEditor = lazy(() => import('./pages/ReportEditor').then((m) => ({ default: m.ReportEditor })))
+const Backfill = lazy(() => import('./pages/Backfill').then((m) => ({ default: m.Backfill })))
 // 開発用デモ。本番ビルドでは import.meta.env.DEV が false になり丸ごと消える
 const DemoPage = import.meta.env.DEV ? lazy(() => import('./dev/DemoPage').then((m) => ({ default: m.DemoPage }))) : null
 
@@ -22,6 +23,7 @@ createRoot(document.getElementById('root')!).render(
             <Route index element={<AdminHome />} />
             <Route path="clients/:clientId" element={<AdminClient />} />
             <Route path="clients/:clientId/reports/:reportId" element={<ReportEditor />} />
+            <Route path="clients/:clientId/backfill" element={<Backfill />} />
           </Route>
           {DemoPage && <Route path="/demo" element={<DemoPage />} />}
           <Route path="*" element={<Navigate to="/admin" replace />} />

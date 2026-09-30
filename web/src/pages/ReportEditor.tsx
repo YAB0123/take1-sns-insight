@@ -5,7 +5,7 @@ import { auth } from '../firebase'
 import { collect, pingExtension } from '../lib/extension'
 import { applyGroups, MatchEditor } from '../components/MatchEditor'
 import { deleteReport, getClient, listReports, publishReport, requestInsight, requestMatch, saveReport, unpublishReport } from '../lib/db'
-import { autoGroup } from '../lib/matching'
+import { mergeCollected } from '../lib/merge'
 import { buildUrls } from '../lib/urls'
 import type { AccountMetrics, Client, Insight, Platform, Report } from '../types'
 import { PLATFORMS, PLATFORM_LABEL } from '../types'
@@ -81,22 +81,7 @@ export function ReportEditor() {
       { urls: report!.urls, periodStart: report!.periodStart, periodEnd: report!.periodEnd, targets },
       (m) => setLog((l) => [...l, m]),
     )
-    const platforms = { ...report!.platforms }
-    // 各管理画面の「フォロワー総数」は期間を指定しても今日の値しか出ない。
-    // 締めから1週間以上たった過去の月では上書きせず、既にある値（過去シートなど）を残す
-    const isPast = Date.parse(`${report!.periodEnd}T00:00:00+09:00`) < Date.now() - 7 * 86_400_000
-    for (const [pl, fetched] of Object.entries(res.data)) {
-      const prev = report!.platforms[pl as Platform]
-      let d = fetched
-      // 過去シートの投稿（当時の記録）は残し、期間の数値だけ更新する
-      if (pl === 'instagram' && keepSheetPosts && hasSheetPosts) d = { ...d, posts: prev!.posts }
-      if (isPast) d = { ...d, account: { ...d.account, followers: prev?.account.followers } }
-      // 確認済みの「同じ動画の紐付け」は取り込み直しても残す（投稿 id は取り込みごとに同じ）
-      const keep = new Map((prev?.posts ?? []).filter((p) => p.groupKey).map((p) => [p.id, p.groupKey]))
-      d = { ...d, posts: d.posts.map((p) => (keep.has(p.id) ? { ...p, groupKey: keep.get(p.id) } : p)) }
-      platforms[pl as Platform] = d
-    }
-    const next = autoGroup({ ...report!, platforms })
+    const next = mergeCollected(report!, res, all, { keepSheetPosts })
     setLog((l) => [...l, ...res.errors.map((e) => `⚠ ${e}`), '取込が終わりました。内容を確認して保存してください。'])
     setReport(next)
     setDirty(true)

@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { getClient, listReports, newReportId, publishReport, saveReport, updateClient } from '../lib/db'
+import { addMonths } from '../lib/merge'
 import { buildUrls, defaultLabel, detectPeriod, extractIds } from '../lib/urls'
 import type { Client, Report, ReportUrls } from '../types'
 import { EMPTY_INSIGHT } from '../types'
+
+/** 新しいクライアントの初回にまとめて作る月数（入力した月を含む） */
+const BACKFILL_MONTHS = 12
 
 export function shareUrl(c: Client) {
   return `${location.origin}/r/${c.shareToken}`
@@ -24,6 +28,7 @@ export function AdminClient() {
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
   const [copied, setCopied] = useState(false)
+  const [backfill, setBackfill] = useState(true)
 
   useEffect(() => {
     getClient(clientId).then(setClient)
@@ -48,17 +53,31 @@ export function AdminClient() {
     if (!client || !start || !end) return
     const ids = { ...client.ids, ...Object.fromEntries(Object.entries(extractIds(urls) ?? {}).filter(([, v]) => v)) }
     await updateClient(client.id, { ids })
-    const report: Report = {
+    const make = (s: string, e: string, u: ReportUrls): Report => ({
       id: newReportId(client.id),
       clientId: client.id,
-      periodStart: start,
-      periodEnd: end,
-      label: defaultLabel(start),
-      urls,
+      periodStart: s,
+      periodEnd: e,
+      label: defaultLabel(s),
+      urls: u,
       platforms: {},
       insight: EMPTY_INSIGHT,
       status: 'draft',
       updatedAt: new Date().toISOString(),
+    })
+    const report = make(start, end, urls)
+
+    // 初回（まだレポートが無いクライアント）は、過去1年分（入力した月＋前の11か月）をまとめて作り、一括取込へ
+    if ((reports ?? []).length === 0 && backfill) {
+      const past = Array.from({ length: BACKFILL_MONTHS - 1 }, (_, i) => {
+        const s = addMonths(start, -(i + 1))
+        const e = addMonths(end, -(i + 1))
+        // 拡張機能は期間からURLを組み立て直すので、IDさえ分かればよい
+        return make(s, e, { ...urls, ...buildUrls(ids, s, e) })
+      })
+      for (const r of [report, ...past]) await saveReport(r)
+      navigate(`/admin/clients/${client.id}/backfill`)
+      return
     }
     await saveReport(report)
     navigate(`/admin/clients/${client.id}/reports/${report.id}`)
@@ -131,6 +150,11 @@ export function AdminClient() {
           ))}
           {reports?.length === 0 && <li className="px-4 py-3 text-sm text-slate-500">まだレポートがありません。</li>}
         </ul>
+        {reports?.some((r) => Object.keys(r.platforms ?? {}).length === 0) && (
+          <Link to={`/admin/clients/${client.id}/backfill`} className="mr-4 inline-block rounded-md bg-indigo-700 px-3 py-1.5 text-sm text-white">
+            未取込の月をまとめて取り込む（{reports.filter((r) => Object.keys(r.platforms ?? {}).length === 0).length}か月）
+          </Link>
+        )}
         <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-slate-600">
           <span className="rounded border border-slate-300 bg-white px-2 py-1">過去データ（JSON）を取り込む</span>
           <input
@@ -182,6 +206,12 @@ export function AdminClient() {
             作成して取込へ進む
           </button>
         </div>
+        {reports?.length === 0 && (
+          <label className="flex items-center gap-1.5 text-sm text-slate-700">
+            <input type="checkbox" checked={backfill} onChange={(e) => setBackfill(e.target.checked)} />
+            初回なので、過去1年分（この月＋前の{BACKFILL_MONTHS - 1}か月）もまとめて作成し、続けて一括取込する
+          </label>
+        )}
         <p className="text-xs text-slate-500">URLを貼ると集計期間は自動で入ります。日付を先に入れて「自動生成」を押せば、URLを貼らなくても作れます（2回目以降）。</p>
       </section>
     </div>

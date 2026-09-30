@@ -70,6 +70,27 @@ async function wheel(tabId, point, deltaY = 500) {
   })
 }
 
+async function click(tabId, point) {
+  await ensureAttached(tabId)
+  for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) {
+    await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchMouseEvent', { type, x: point.x, y: point.y, button: 'left', clickCount: 1 })
+  }
+}
+
+async function key(tabId, name, code) {
+  await ensureAttached(tabId)
+  for (const type of ['keyDown', 'keyUp']) {
+    await chrome.debugger.sendCommand({ tabId }, 'Input.dispatchKeyEvent', { type, key: name, code: name, windowsVirtualKeyCode: code })
+  }
+}
+
+async function ensureAttached(tabId) {
+  if (!attached.has(tabId)) {
+    await chrome.debugger.attach({ tabId }, '1.3')
+    attached.add(tabId)
+  }
+}
+
 async function detach(tabId) {
   if (!attached.has(tabId)) return
   attached.delete(tabId)
@@ -80,12 +101,56 @@ async function detach(tabId) {
   }
 }
 
+/** 投稿一覧をスクロールしながら最後（期間の開始より前）まで読む */
+async function scrollMetaContent(tabId, req, mode, log) {
+  const found = new Map()
+  let crossPosted = 0
+  let stale = 0
+  for (let i = 0; i < 150 && stale < 5; i++) {
+    const step = await run(tabId, 'metaContentStep', mode)
+    crossPosted = Math.max(crossPosted, step.crossPosted)
+    let added = 0
+    for (const p of step.posts) {
+      if (!found.has(p.id)) added++
+      found.set(p.id, p)
+    }
+    log(`Meta: 投稿一覧を読み取り中…（${found.size}件）`)
+    if (step.oldest < jstStart(req.periodStart)) break
+    await wheel(tabId, step.point, 600)
+    await sleep(1500)
+    stale = added ? 0 : stale + 1
+  }
+  return { found, crossPosted }
+}
+
+/** 本物のクリックで投稿一覧の「フィルター > 配置」を選ぶ */
+async function applyMetaPlacement(tabId, label) {
+  const box = await run(tabId, 'metaFilterPoint', 'combobox')
+  if (!box) return false
+  await click(tabId, box)
+  await sleep(800)
+  const opt = await run(tabId, 'metaFilterPoint', label)
+  if (!opt) return false
+  await click(tabId, opt)
+  await sleep(500)
+  await key(tabId, 'Escape', 27)
+  await sleep(4000)
+  return true
+}
+
 /* ---------- Meta（Instagram / Facebook） ---------- */
 
-function metaUrl(base, page, platform) {
+/*
+ * 貼られたURLの期間は使わない（既定の「過去28日間」などのまま貼られることがある）。
+ * どのSNSも、レポートの集計期間から開くURLを組み立て直す。
+ */
+
+function metaUrl(base, page, platform, req) {
   const u = new URL(base)
   u.pathname = `/latest/insights/${page}`
   u.searchParams.set('platform', platform === 'instagram' ? 'Instagram' : 'Facebook')
+  // Meta は time_range を二重にエンコードする（searchParams.set がもう一段エンコードする）
+  u.searchParams.set('time_range', encodeURIComponent(JSON.stringify({ end: req.periodEnd, start: req.periodStart })))
   if (page === 'people') u.searchParams.set('audience_tab', 'trends')
   else u.searchParams.delete('audience_tab')
   return u.toString()
@@ -96,10 +161,10 @@ async function collectMeta(tabId, req, platforms, log) {
   for (const pl of platforms) {
     const name = pl === 'instagram' ? 'Instagram' : 'Facebook'
     log(`${name}: 期間の数値（結果）を読み取り中…`)
-    await open(tabId, metaUrl(req.urls.meta, 'results', pl))
+    await open(tabId, metaUrl(req.urls.meta, 'results', pl, req))
     const results = await run(tabId, 'metaResults', pl)
     log(`${name}: フォロワー（オーディエンス > トレンド）を読み取り中…`)
-    await open(tabId, metaUrl(req.urls.meta, 'people', pl))
+    await open(tabId, metaUrl(req.urls.meta, 'people', pl, req))
     const trends = await run(tabId, 'metaTrends')
     out[pl] = {
       account: {
@@ -116,23 +181,22 @@ async function collectMeta(tabId, req, platforms, log) {
   }
 
   log('Meta: 投稿一覧を読み取り中…')
-  await open(tabId, metaUrl(req.urls.meta, 'content', platforms[0]))
-  const found = new Map()
-  let stale = 0
-  for (let i = 0; i < 150 && stale < 5; i++) {
-    const step = await run(tabId, 'metaContentStep')
-    let added = 0
-    for (const p of step.posts) {
-      if (!found.has(p.id)) added++
-      found.set(p.id, p)
+  await open(tabId, metaUrl(req.urls.meta, 'content', platforms[0], req))
+  const all = await scrollMetaContent(tabId, req, 'all', log)
+  let posts = [...all.found.values()]
+
+  // クロス投稿（IG+FB を1行で表示）があれば、「Instagramフィード」に絞り込んで Instagram 側の数値で読み直す
+  if (all.crossPosted > 0 && platforms.includes('instagram')) {
+    log(`Meta: クロス投稿 ${all.crossPosted}件を「Instagramフィード」で読み直し中…`)
+    await open(tabId, metaUrl(req.urls.meta, 'content', platforms[0], req))
+    if (await applyMetaPlacement(tabId, 'Instagramフィード')) {
+      const ig = await scrollMetaContent(tabId, req, 'igPlacement', log)
+      posts = [...posts.filter((p) => p.platform !== 'instagram'), ...ig.found.values()]
+    } else {
+      log('⚠ Meta: 「Instagramフィード」の絞り込みができず、クロス投稿の動画は取り込めませんでした')
     }
-    log(`Meta: 投稿一覧を読み取り中…（${found.size}件）`)
-    if (step.oldest < jstStart(req.periodStart)) break
-    await wheel(tabId, step.point, 600)
-    await sleep(1500)
-    stale = added ? 0 : stale + 1
   }
-  for (const p of found.values()) {
+  for (const p of posts) {
     if (out[p.platform] && inPeriod(p.publishedAt, req.periodStart, req.periodEnd)) out[p.platform].posts.push(p)
   }
   for (const pl of platforms) log(`${pl === 'instagram' ? 'Instagram' : 'Facebook'}: 期間内の投稿 ${out[pl].posts.length}件`)
@@ -141,14 +205,23 @@ async function collectMeta(tabId, req, platforms, log) {
 
 /* ---------- TikTok ---------- */
 
+/** TikTok Studio の期間指定（開始日・最終日の日本時間0時） */
+function tiktokUrl(path, req) {
+  const slash = (d) => d.replaceAll('-', '/')
+  const dateRange = {
+    type: 'custom',
+    dateRange: { start: jstStart(req.periodStart), end: jstStart(req.periodEnd) },
+    UTCDateRange: { from: `${slash(req.periodStart)} 00:00:00`, to: `${slash(req.periodEnd)} 00:00:00` },
+  }
+  return `https://www.tiktok.com/tiktokstudio/${path}?dateRange=${encodeURIComponent(JSON.stringify(dateRange))}`
+}
+
 async function collectTikTok(tabId, req, log) {
   log('TikTok: 期間の数値を読み取り中…')
-  await open(tabId, req.urls.tiktok)
+  await open(tabId, tiktokUrl('analytics', req))
   const overview = await run(tabId, 'tiktokOverview')
 
-  const fu = new URL(req.urls.tiktok)
-  fu.pathname = '/tiktokstudio/analytics/followers'
-  await open(tabId, fu.toString())
+  await open(tabId, tiktokUrl('analytics/followers', req))
   const followers = await run(tabId, 'tiktokFollowers')
 
   log('TikTok: 投稿一覧を確認中…')
@@ -234,14 +307,26 @@ function ytExploreUrl(channel, from, to, videoId) {
 
 const normTitle = (s) => (s || '').replace(/\s+/g, '').replace(/#\S+/g, '')
 
+/** YouTube Studio の期間は太平洋時間0時のミリ秒（終了は最終日の翌日0時） */
+const laStart = (d) => Date.parse(`${d}T00:00:00-07:00`)
+
+async function youtubeChannel(tabId, url) {
+  const fromUrl = url.match(/\/channel\/(UC[\w-]+)/)?.[1]
+  if (fromUrl) return fromUrl
+  // URL にチャンネルIDが無ければ、YouTube Studio を開いて転送先のURLから読む
+  await open(tabId, 'https://studio.youtube.com/')
+  const tab = await chrome.tabs.get(tabId)
+  const id = tab.url?.match(/\/channel\/(UC[\w-]+)/)?.[1]
+  if (!id) throw new Error('YouTube Studio のチャンネルIDを特定できません（このChromeでYouTube Studioにログインしているか確認してください）')
+  return id
+}
+
 async function collectYouTube(tabId, req, log) {
-  const channel = req.urls.youtube.match(/\/channel\/([^/]+)/)?.[1]
-  const period = req.urls.youtube.match(/period-(\d+),(\d+)/)
-  if (!channel || !period) throw new Error('YouTube の URL からチャンネルIDと期間を読み取れません')
-  const [from, to] = [Number(period[1]), Number(period[2])]
+  const channel = await youtubeChannel(tabId, req.urls.youtube)
+  const [from, to] = [laStart(req.periodStart), laStart(req.periodEnd) + DAY]
 
   log('YouTube: 期間の数値を読み取り中…')
-  await open(tabId, req.urls.youtube)
+  await open(tabId, `https://studio.youtube.com/channel/${channel}/analytics/tab-overview/period-${from},${to}`)
   const overview = await run(tabId, 'ytOverview')
   await open(tabId, ytExploreUrl(channel, from, to))
   const periodTable = await run(tabId, 'ytExplore')

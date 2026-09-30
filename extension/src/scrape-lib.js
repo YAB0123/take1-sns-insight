@@ -174,8 +174,29 @@
     動画平均再生時間: 'avgWatchSec',
   }
 
-  /** insights/content: 表示中の行を読む（ストーリーズとクロス投稿の重複行は除く） */
-  async function metaContentStep() {
+  /**
+   * 投稿一覧の「フィルター」操作用に、クリックする場所を返す。
+   * target: 'combobox'（フィルターの入れ物）か、選択肢の文言（例: 'Instagramフィード'）
+   */
+  async function metaFilterPoint(target) {
+    const el = await waitFor(() => {
+      if (target === 'combobox') return [...document.querySelectorAll('[role=combobox]')].find((e) => clean(e.textContent).startsWith('フィルター'))
+      return [...document.querySelectorAll('[role=option]')].find((e) => clean(e.textContent) === target)
+    }, 8000)
+    if (!el) return null
+    el.scrollIntoView({ block: 'center' })
+    await sleep(200)
+    const r = el.getBoundingClientRect()
+    return { x: Math.round(r.left + Math.min(r.width / 2, 60)), y: Math.round(r.top + r.height / 2) }
+  }
+
+  /**
+   * insights/content: 表示中の行を読む。
+   * mode 'all'  : 1つのSNSにだけ投稿した行（ストーリーズ除く）
+   * mode 'igPlacement': 「Instagramフィード」で絞り込んだ一覧から、Instagramを含む行（クロス投稿もInstagramとして）
+   * クロス投稿の行は閲覧数・いいねが IG+FB の合計で分けられないため、Instagram 側に1回だけ数える
+   */
+  async function metaContentStep(mode = 'all') {
     const grid = await waitFor(() => {
       const g = document.querySelector('[role=grid]')
       return g && g.querySelectorAll('[role=row]').length > 1 ? g : undefined
@@ -191,6 +212,7 @@
 
     const posts = []
     let oldest = Infinity
+    let crossPosted = 0
     for (const row of grid.querySelectorAll('[role=row]')) {
       const cells = [...row.querySelectorAll('[role=gridcell]')]
       if (cells.length < headers.length - 1) continue
@@ -201,9 +223,19 @@
       const publishedAt = jaDateTime(cells[col.date]?.textContent)
       if (!publishedAt) continue
       oldest = Math.min(oldest, Date.parse(publishedAt))
-      if (type === 'ストーリーズ' || alts.length !== 1) continue
+      if (type === 'ストーリーズ') continue
+      const cross = alts.length > 1
+      if (cross) crossPosted++
+      let platformAlt
+      if (mode === 'igPlacement') {
+        if (!alts.includes('Instagram')) continue
+        platformAlt = 'Instagram'
+      } else {
+        if (alts.length !== 1) continue
+        platformAlt = alts[0]
+      }
       const title = lines[0] === 'この投稿にはテキストがありません' ? `（テキストなし・${type}）` : lines[0]
-      const key = `${alts[0]}|${publishedAt}|${title.slice(0, 40)}`
+      const key = `${platformAlt}|${publishedAt}|${title.slice(0, 40)}`
       const metrics = {}
       for (const [k, i] of Object.entries(col)) {
         if (k === 'date') continue
@@ -211,14 +243,14 @@
       }
       posts.push({
         id: `meta-${hash(key)}`,
-        platform: alts[0] === 'Instagram' ? 'instagram' : 'facebook',
+        platform: platformAlt === 'Instagram' ? 'instagram' : 'facebook',
         title,
         publishedAt,
-        type,
+        type: cross ? `${type}（FB同時投稿）` : type,
         metrics,
       })
     }
-    return { posts, oldest, point: centerOf(grid) }
+    return { posts, oldest, crossPosted, point: centerOf(grid) }
   }
 
   /* ================= TikTok Studio ================= */
@@ -397,6 +429,7 @@
     metaResults,
     metaTrends,
     metaContentStep,
+    metaFilterPoint,
     tiktokListStep,
     tiktokVideo,
     tiktokOverview,
