@@ -291,10 +291,12 @@ const YT_METRICS = [
   'SUBSCRIBERS_NET_CHANGE',
 ]
 
-function ytExploreUrl(channel, from, to, videoId) {
+/** shortsOnly: 「コンテンツ > YouTube ショート」と同じ絞り込み（CM・通常の動画を除く） */
+function ytExploreUrl(channel, from, to, videoId, shortsOnly = false) {
   const q = new URLSearchParams({
     entity_type: videoId ? 'VIDEO' : 'CHANNEL',
     entity_id: videoId ?? channel,
+    ...(shortsOnly ? { ur_dimensions: 'CREATOR_CONTENT_TYPE', ur_values: "'SHORTS'", ur_inclusive_starts: '', ur_exclusive_ends: '' } : {}),
     time_period: `${from},${to}`,
     explore_type: 'TABLE_AND_CHART',
     metric: 'EXTERNAL_VIEWS',
@@ -332,6 +334,9 @@ async function collectYouTube(tabId, req, log) {
   await open(tabId, `https://studio.youtube.com/channel/${channel}/analytics/tab-overview/period-${from},${to}`)
   const overview = await run(tabId, 'ytOverview')
   await open(tabId, ytExploreUrl(channel, from, to))
+  const channelTable = await run(tabId, 'ytExplore')
+  // 閲覧数などはショートだけで数える（CMを広告で回すとチャンネル全体の視聴回数が大きく膨らむため）
+  await open(tabId, ytExploreUrl(channel, from, to, undefined, true))
   const periodTable = await run(tabId, 'ytExplore')
 
   log('YouTube: ショート一覧を確認中…')
@@ -350,7 +355,7 @@ async function collectYouTube(tabId, req, log) {
   // 公開日から取込日までの累計を取るため、期間の開始から今日までで表を出す
   log('YouTube: ショートごとの数値を読み取り中…')
   const tomorrow = Math.ceil((Date.now() - from) / DAY) * DAY + from
-  await open(tabId, ytExploreUrl(channel, from, tomorrow))
+  await open(tabId, ytExploreUrl(channel, from, tomorrow, undefined, true))
   const lifetime = await run(tabId, 'ytExplore')
   const byTitle = new Map(lifetime.rows.map((r) => [normTitle(r.title), r.metrics]))
 
@@ -379,7 +384,8 @@ async function collectYouTube(tabId, req, log) {
   return {
     account: {
       followers: overview.followers,
-      netFollowers: t.follows ?? overview.netFollowers,
+      // 登録者の純増はチャンネル全体（ショート以外からの登録も含む）
+      netFollowers: channelTable.total?.follows ?? overview.netFollowers,
       views: t.views ?? overview.views,
       watchHours: t.watchHours ?? overview.watchHours,
       likes: t.likes,

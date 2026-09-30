@@ -4,6 +4,7 @@ import { ReportView } from '../components/ReportView'
 import { auth } from '../firebase'
 import { collect, pingExtension } from '../lib/extension'
 import { applyGroups, MatchEditor } from '../components/MatchEditor'
+import { PostEditor } from '../components/PostEditor'
 import { deleteReport, getClient, listReports, publishReport, requestInsight, requestMatch, saveReport, unpublishReport } from '../lib/db'
 import { mergeCollected } from '../lib/merge'
 import { buildUrls } from '../lib/urls'
@@ -22,9 +23,10 @@ const INSIGHT_FIELDS: { key: keyof Insight; label: string; rows: number }[] = [
 const ACCOUNT_FIELDS: { key: keyof AccountMetrics; label: string }[] = [
   { key: 'followers', label: 'フォロワー数' },
   { key: 'netFollowers', label: '新規フォロワー（純増）' },
-  { key: 'views', label: 'ビュー' },
+  { key: 'views', label: '閲覧数（アカウント全体）' },
   { key: 'reach', label: 'リーチ' },
   { key: 'profileViews', label: 'プロフィール表示' },
+  { key: 'watchHours', label: '総再生時間（YouTube）' },
 ]
 
 /** 拡張が扱う取込対象。Meta の URL 1本で Instagram と Facebook の両方を取る */
@@ -255,7 +257,7 @@ export function ReportEditor() {
           {collected.length > 0 && (
             <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-5">
               <h2 className="font-semibold text-slate-800">2. アカウント数値の確認・修正</h2>
-              <p className="text-xs text-slate-500">取込できなかった値や、画面と違う値はここで直せます（空欄は「—」表示）。</p>
+              <p className="text-xs text-slate-500">取込できなかった値や、画面と違う値、広告で回した分を除きたい値はここで直せます（空欄は「—」表示）。</p>
               <div className="overflow-x-auto">
                 <table className="text-sm">
                   <thead>
@@ -289,6 +291,8 @@ export function ReportEditor() {
               </div>
             </section>
           )}
+
+          {collected.length > 0 && <PostEditor platforms={report.platforms} onChange={(platforms) => update({ platforms })} />}
 
           {collected.length > 0 && (
             <MatchEditor report={report} busy={!!busy} onSuggest={suggestMatch} onChange={(platforms) => update({ platforms })} />
