@@ -106,7 +106,7 @@ async function scrollMetaContent(tabId, req, mode, log) {
   const found = new Map()
   let crossPosted = 0
   let stale = 0
-  for (let i = 0; i < 150 && stale < 5; i++) {
+  for (let i = 0; i < 150 && stale < 3; i++) {
     const step = await run(tabId, 'metaContentStep', mode)
     crossPosted = Math.max(crossPosted, step.crossPosted)
     let added = 0
@@ -464,6 +464,8 @@ chrome.runtime.onConnect.addListener((port) => {
   // 管理ページを閉じた・移動した（戻る/進むキャッシュ含む）ときの切断。取込は続け、結果は捨てる
   port.onDisconnect.addListener(() => void chrome.runtime.lastError)
   port.onMessage.addListener(async (req) => {
+    // 管理ページ側からの生存確認（service worker が途中で止められないように送ってもらっている）
+    if (req?.type === 'keepalive') return
     const post = (m) => {
       try {
         port.postMessage(m)
