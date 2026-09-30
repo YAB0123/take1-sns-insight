@@ -149,8 +149,11 @@ function metaUrl(base, page, platform, req) {
   const u = new URL(base)
   u.pathname = `/latest/insights/${page}`
   u.searchParams.set('platform', platform === 'instagram' ? 'Instagram' : 'Facebook')
+  // 投稿一覧の期間は日本時間ではなく米国太平洋時間で絞り込まれ、初日の朝（JST 0〜16/17時）の投稿が漏れる。
+  // 一覧だけ1日前から開き、期間内かどうかは inPeriod（日本時間）で判定する
+  const start = page === 'content' ? new Date(jstStart(req.periodStart) - DAY + 9 * 3600000).toISOString().slice(0, 10) : req.periodStart
   // Meta は time_range を二重にエンコードする（searchParams.set がもう一段エンコードする）
-  u.searchParams.set('time_range', encodeURIComponent(JSON.stringify({ end: req.periodEnd, start: req.periodStart })))
+  u.searchParams.set('time_range', encodeURIComponent(JSON.stringify({ end: req.periodEnd, start })))
   if (page === 'people') u.searchParams.set('audience_tab', 'trends')
   else u.searchParams.delete('audience_tab')
   return u.toString()

@@ -17,11 +17,15 @@ export interface KpiSpec {
   digits?: number
   /** 変化量をポイント差で出す（率の指標） */
   points?: boolean
+  /** ラベルの下に出す短い説明 */
+  note?: string
   /** 集計の仕方。先月と違えば先月比を出さない */
   basis?: (s: PlatformSummary) => string
 }
 
-const views: KpiSpec = { label: '総ビュー', get: (s) => s.views, basis: (s) => s.viewsBasis }
+const views: KpiSpec = { label: '閲覧数', note: 'アカウント全体（過去の投稿の分も含む）', get: (s) => s.views, basis: (s) => s.viewsBasis }
+const postViews: KpiSpec = { label: 'ビュー数', note: '期間内に公開した投稿の合計', get: (s) => s.postViews }
+const reach: KpiSpec = { label: 'リーチ数', get: (s) => s.reach }
 const net: KpiSpec = { label: '新規フォロワー（純増）', get: (s) => s.netFollowers }
 const followers: KpiSpec = { label: 'フォロワー数', get: (s) => s.followers, basis: (s) => s.followersBasis ?? '' }
 const posts: KpiSpec = { label: '投稿数', get: (s) => s.postCount }
@@ -32,10 +36,11 @@ const saves: KpiSpec = { label: '保存', get: (s) => s.saves }
 const er: KpiSpec = { label: 'エンゲージメント率', get: (s) => s.engagementRate, unit: '%', digits: 2, points: true }
 
 export const KPI_SPECS: Record<TabKey, KpiSpec[]> = {
-  combined: [views, net, followers, posts, likes, comments, shares, saves, er],
+  combined: [views, postViews, { ...reach, note: 'Instagram・Facebookの合計' }, net, followers, posts, likes, comments, shares, saves, er],
   instagram: [
-    { ...views, label: '閲覧数' },
-    { label: 'リーチ', get: (s) => s.reach },
+    views,
+    postViews,
+    reach,
     net,
     followers,
     posts,
@@ -44,9 +49,10 @@ export const KPI_SPECS: Record<TabKey, KpiSpec[]> = {
     { label: 'プロフィールアクセス', get: (s) => s.profileViews },
     er,
   ],
-  facebook: [{ ...views, label: '閲覧数' }, { label: 'リーチ', get: (s) => s.reach }, net, followers, posts, likes, comments, shares, er],
+  facebook: [views, postViews, reach, net, followers, posts, likes, comments, shares, er],
   tiktok: [
-    { ...views, label: '動画視聴数' },
+    views,
+    postViews,
     { label: 'プロフィール表示', get: (s) => s.profileViews },
     net,
     followers,
@@ -57,7 +63,8 @@ export const KPI_SPECS: Record<TabKey, KpiSpec[]> = {
     er,
   ],
   youtube: [
-    { ...views, label: '視聴回数' },
+    views,
+    postViews,
     { label: '総再生時間', get: (s) => s.watchHours, unit: '時間', digits: 1 },
     { ...net, label: '登録者（純増）' },
     { ...followers, label: '登録者数' },

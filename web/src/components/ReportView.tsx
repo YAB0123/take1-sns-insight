@@ -49,6 +49,7 @@ function KpiGrid({ report, prev, tab }: { report: Report; prev?: Report; tab: Ta
         return (
           <div key={spec.label} className="rounded-lg border border-slate-200 bg-white p-3 break-inside-avoid">
             <div className="text-xs text-slate-500">{spec.label}</div>
+            {spec.note && <div className="text-[10px] leading-tight text-slate-400">{spec.note}</div>}
             <div className="mt-1 text-xl font-semibold text-slate-900 tabular-nums">
               {spec.label.includes('純増') && cur != null && cur > 0 ? '+' : ''}
               {fmt(cur, spec.digits ?? 0)}

@@ -11,7 +11,10 @@ export function hasData(d: PlatformData | undefined): d is PlatformData {
 export interface PlatformSummary {
   followers?: number
   netFollowers?: number
+  /** 閲覧数：管理画面のアカウント全体の期間合計（無ければ投稿の合計） */
   views: number
+  /** ビュー数：期間内に公開した投稿のビューの合計（取込時点までの累計） */
+  postViews: number
   /** ビューの出どころ。account=管理画面の期間合計、posts=期間内投稿の合計（過去シート分など）。違う月同士は比べない */
   viewsBasis: 'account' | 'posts' | 'mixed'
   /** フォロワー総数が入っているSNSの組み合わせ。先月と違えば比べない（過去の月は総数が無いSNSがある） */
@@ -43,6 +46,7 @@ export function summarize(d: PlatformData | undefined): PlatformSummary | undefi
     followers: a.followers,
     netFollowers: a.netFollowers,
     views,
+    postViews,
     viewsBasis: a.views != null ? 'account' : 'posts',
     reach: a.reach,
     likes,
@@ -75,6 +79,8 @@ export function combine(report: Report, only: Platform[] = PLATFORMS): PlatformS
     followers: opt('followers'),
     netFollowers: opt('netFollowers'),
     views: sum(parts.map((x) => x.views)),
+    postViews,
+    reach: parts.some((x) => x.reach != null) ? sum(parts.map((x) => x.reach)) : undefined,
     viewsBasis: bases.size === 1 ? [...bases][0] : 'mixed',
     followersBasis: pls.filter((pl) => report.platforms[pl]?.account.followers != null).join(','),
     likes: sum(parts.map((x) => x.likes)),
