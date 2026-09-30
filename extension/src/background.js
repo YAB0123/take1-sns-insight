@@ -406,8 +406,9 @@ async function collectYouTube(tabId, req, log) {
       followers: overview.followers,
       // 登録者の純増はチャンネル全体（ショート以外からの登録も含む）
       netFollowers: channelTable.total?.follows ?? overview.netFollowers,
-      views: t.views ?? overview.views,
-      watchHours: t.watchHours ?? overview.watchHours,
+      // ショートの表が空欄（—）の月はショートの再生が無い。チャンネル全体の値（CM・通常動画を含む）では埋めない
+      views: t.views ?? 0,
+      watchHours: t.watchHours ?? 0,
       likes: t.likes,
       comments: t.comments,
       shares: t.shares,
