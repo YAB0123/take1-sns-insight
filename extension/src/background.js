@@ -50,18 +50,11 @@ async function runOnce(tabId, name, args) {
 
 async function run(tabId, name, ...args) {
   for (let attempt = 0; ; attempt++) {
-    // Meta の「オーディエンス」画面などでタブが応答しなくなり、いつまでも返ってこないことがある。
-    // 時間内に返らなければページを読み込み直して1回だけやり直す
+    // Meta の「オーディエンス」画面などでタブが応答しなくなり、いつまでも返ってこないことがある
     const timedOut = Symbol('timeout')
     const res = await Promise.race([runOnce(tabId, name, args), sleep(RUN_TIMEOUT).then(() => timedOut)])
-    if (res === timedOut) {
-      if (attempt >= 1) throw new Error(`画面が応答しませんでした（${name}）`)
-      const loaded = waitComplete(tabId)
-      await chrome.tabs.reload(tabId, { bypassCache: true })
-      await loaded
-      await sleep(3000)
-      continue
-    }
+    // 固まったタブは読み込み直しても戻らないので、このSNSはあきらめる（タブは閉じ、次のSNSは新しいタブで続ける）
+    if (res === timedOut) throw new Error(`画面が応答しませんでした（${name}）`)
     if (res?.error) throw new Error(res.error.message ?? String(res.error))
     // 読み取り中にページが再読み込み・転送されると結果が空で返る（Meta で時々起きる）。少し待って1回だけやり直す
     if (res?.result != null || attempt >= 1) return res?.result
@@ -450,38 +443,36 @@ async function collect(req, post) {
   const log = (message) => post({ type: 'progress', message })
   const data = {}
   const errors = []
-  const tab = await chrome.tabs.create({ url: 'about:blank', active: true })
   const collectedAt = new Date().toISOString()
-  try {
-    const metaTargets = req.targets.filter((t) => t === 'instagram' || t === 'facebook')
-    if (metaTargets.length && req.urls.meta) {
-      try {
-        Object.assign(data, await collectMeta(tab.id, req, metaTargets, log))
-      } catch (e) {
-        errors.push(`Instagram/Facebook: ${e.message}`)
-      }
-    }
-    if (req.targets.includes('tiktok') && req.urls.tiktok) {
-      try {
-        data.tiktok = await collectTikTok(tab.id, req, log)
-      } catch (e) {
-        errors.push(`TikTok: ${e.message}`)
-      }
-    }
-    if (req.targets.includes('youtube') && req.urls.youtube) {
-      try {
-        data.youtube = await collectYouTube(tab.id, req, log)
-      } catch (e) {
-        errors.push(`YouTube: ${e.message}`)
-      }
-    }
-  } finally {
-    await detach(tab.id)
+  // SNSごとに新しいタブで取り込む（どこかの画面でタブが固まっても、次のSNSは新しいタブで続けられる）
+  async function withTab(label, fn) {
+    const tab = await chrome.tabs.create({ url: 'about:blank', active: true })
     try {
-      await chrome.tabs.remove(tab.id)
-    } catch {
-      // すでに閉じられている
+      await fn(tab.id)
+    } catch (e) {
+      errors.push(`${label}: ${e.message}`)
+    } finally {
+      await detach(tab.id)
+      try {
+        await chrome.tabs.remove(tab.id)
+      } catch {
+        // すでに閉じられている
+      }
     }
+  }
+  const metaTargets = req.targets.filter((t) => t === 'instagram' || t === 'facebook')
+  if (metaTargets.length && req.urls.meta) {
+    await withTab('Instagram/Facebook', async (tabId) => Object.assign(data, await collectMeta(tabId, req, metaTargets, log)))
+  }
+  if (req.targets.includes('tiktok') && req.urls.tiktok) {
+    await withTab('TikTok', async (tabId) => {
+      data.tiktok = await collectTikTok(tabId, req, log)
+    })
+  }
+  if (req.targets.includes('youtube') && req.urls.youtube) {
+    await withTab('YouTube', async (tabId) => {
+      data.youtube = await collectYouTube(tabId, req, log)
+    })
   }
   for (const d of Object.values(data)) d.collectedAt = collectedAt
   return { data, errors }
