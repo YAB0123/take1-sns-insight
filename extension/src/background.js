@@ -188,6 +188,11 @@ async function collectMeta(tabId, req, platforms, log) {
     log(`${name}: フォロワー（オーディエンス > トレンド）を読み取り中…`)
     await open(tabId, metaUrl(req.urls.meta, 'people', pl, req))
     const trends = await run(tabId, 'metaTrends')
+    if (trends?.shown && trends.shown !== name) {
+      log(`⚠ ${name}: このアカウントには${name}がつながっていないため取り込みません（${trends.shown}の画面が表示されました）`)
+      continue
+    }
+    if (trends && trends.netFollowers == null) log(`${name}: フォロワーが少なく「トレンド」が無いため、新規フォロワー（純増）は取得できません`)
     out[pl] = {
       account: {
         followers: trends.followers,
@@ -226,7 +231,7 @@ async function collectMeta(tabId, req, platforms, log) {
   for (const p of byId.values()) {
     if (out[p.platform] && inPeriod(p.publishedAt, req.periodStart, req.periodEnd)) out[p.platform].posts.push(p)
   }
-  for (const pl of platforms) log(`${pl === 'instagram' ? 'Instagram' : 'Facebook'}: 期間内の投稿 ${out[pl].posts.length}件`)
+  for (const pl of Object.keys(out)) log(`${pl === 'instagram' ? 'Instagram' : 'Facebook'}: 期間内の投稿 ${out[pl].posts.length}件`)
   return out
 }
 

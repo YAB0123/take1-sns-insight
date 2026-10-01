@@ -149,17 +149,27 @@
 
   /** insights/people?audience_tab=trends: フォロー・フォロー解除・フォロワー総数 */
   async function metaTrends() {
-    const ok = await waitFor(() => mainLines().includes('フォローをやめた数'))
+    // フォロワーが100人未満のアカウントは「トレンド」が出ず、「Instagramフォロワー N」だけが表示される
+    const total = (lines) => lines.findIndex((l) => /^(Instagram|Facebook)フォロワー$/.test(l))
+    const ok = await waitFor(() => {
+      const lines = mainLines()
+      return lines.includes('フォローをやめた数') || total(lines) >= 0
+    })
     if (!ok) throw new Error('Meta「オーディエンス > トレンド」の読み込みがタイムアウトしました')
-    await sleep(500)
+    await sleep(1500)
     const lines = mainLines()
+    const ti = total(lines)
+    // 表示されているSNS（Facebook を指定しても、Facebookページが無いと Instagram の画面になる）
+    const shown = ti >= 0 ? lines[ti].replace('フォロワー', '') : undefined
+    if (!lines.includes('フォローをやめた数')) return { shown, followers: ti >= 0 ? numAfter(lines, lines[ti]) : undefined }
     const follows = numAfter(lines, 'フォロー')
     const unfollows = numAfter(lines, 'フォローをやめた数')
     return {
       follows,
       unfollows,
       netFollowers: numAfter(lines, '純フォロー数') ?? (follows != null && unfollows != null ? follows - unfollows : undefined),
-      followers: numAfter(lines, 'フォロワー'),
+      followers: numAfter(lines, 'フォロワー') ?? (ti >= 0 ? numAfter(lines, lines[ti]) : undefined),
+      shown,
     }
   }
 
