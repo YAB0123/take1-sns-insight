@@ -197,8 +197,23 @@ async function collectMeta(tabId, req, platforms, log) {
     await open(tabId, metaUrl(req.urls.meta, 'results', pl, req))
     const results = await run(tabId, 'metaResults', pl)
     log(`${name}: フォロワー（オーディエンス > トレンド）を読み取り中…`)
-    await open(tabId, metaUrl(req.urls.meta, 'people', pl, req))
-    const trends = await run(tabId, 'metaTrends')
+    // この画面はタブごと固まることがあるので、使い捨てのタブで開く。固まったら閉じて、純増なしで続ける
+    let trends
+    const tmp = await chrome.tabs.create({ url: 'about:blank', active: true })
+    try {
+      await open(tmp.id, metaUrl(req.urls.meta, 'people', pl, req))
+      trends = await run(tmp.id, 'metaTrends')
+    } catch (e) {
+      log(`⚠ ${name}: フォロワー（オーディエンス）を読めませんでした（${e.message}）。新規フォロワー（純増）なしで続けます`)
+      trends = {}
+    } finally {
+      try {
+        await chrome.tabs.remove(tmp.id)
+      } catch {
+        // すでに閉じられている
+      }
+      await chrome.tabs.update(tabId, { active: true })
+    }
     if (trends?.shown && trends.shown !== name) {
       log(`⚠ ${name}: このアカウントには${name}がつながっていないため取り込みません（${trends.shown}の画面が表示されました）`)
       continue
