@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SNSインサイト取込",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Meta Business Suite・TikTok Studio・YouTube Studio の数値を読み取り、SNSインサイト管理ページへ渡します。",
   "permissions": ["tabs", "scripting", "debugger"],
   "host_permissions": ["https://business.facebook.com/*", "https://www.tiktok.com/*", "https://studio.youtube.com/*"],

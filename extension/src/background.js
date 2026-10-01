@@ -37,14 +37,18 @@ async function open(tabId, url) {
 }
 
 async function run(tabId, name, ...args) {
-  await chrome.scripting.executeScript({ target: { tabId }, files: ['src/scrape-lib.js'] })
-  const [res] = await chrome.scripting.executeScript({
-    target: { tabId },
-    func: (n, a) => globalThis.__snsScrape[n](...a),
-    args: [name, args],
-  })
-  if (res?.error) throw new Error(res.error.message ?? String(res.error))
-  return res?.result
+  for (let attempt = 0; ; attempt++) {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['src/scrape-lib.js'] })
+    const [res] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (n, a) => globalThis.__snsScrape[n](...a),
+      args: [name, args],
+    })
+    if (res?.error) throw new Error(res.error.message ?? String(res.error))
+    // 読み取り中にページが再読み込み・転送されると結果が空で返る（Meta で時々起きる）。少し待って1回だけやり直す
+    if (res?.result != null || attempt >= 1) return res?.result
+    await sleep(3000)
+  }
 }
 
 /* ---------- 本物のホイール操作（仮想スクロールの一覧で続きを読み込ませる） ---------- */
