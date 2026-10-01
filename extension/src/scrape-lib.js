@@ -98,8 +98,10 @@
   function numAfter(lines, label, lookahead = 4, skip = ['通算', '全期間']) {
     const i = lines.indexOf(label)
     if (i < 0) return undefined
-    for (const l of lines.slice(i + 1, i + 1 + lookahead)) {
-      if (skip.includes(l)) continue
+    for (const raw of lines.slice(i + 1, i + 1 + lookahead)) {
+      // 目に見えない空白（ゼロ幅スペース）だけの行は見出しではないので読み飛ばす
+      const l = clean(raw)
+      if (!l || skip.includes(l)) continue
       const v = num(l)
       if (v != null) return v
       if (!isDash(l)) return undefined

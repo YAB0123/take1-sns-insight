@@ -57,8 +57,8 @@ async function run(tabId, name, ...args) {
     if (res === timedOut) throw new Error(`画面が応答しませんでした（${name}）`)
     if (res?.error) throw new Error(res.error.message ?? String(res.error))
     // 読み取り中にページが再読み込み・転送されると結果が空で返る（Meta で時々起きる）。少し待って1回だけやり直す
-    if (res?.result != null || attempt >= 1) return res?.result
-    await sleep(3000)
+    if (res?.result != null || attempt >= 2) return res?.result
+    await sleep(4000)
   }
 }
 
@@ -202,7 +202,7 @@ async function collectMeta(tabId, req, platforms, log) {
     const tmp = await chrome.tabs.create({ url: 'about:blank', active: true })
     try {
       await open(tmp.id, metaUrl(req.urls.meta, 'people', pl, req))
-      trends = await run(tmp.id, 'metaTrends')
+      trends = (await run(tmp.id, 'metaTrends')) ?? {}
     } catch (e) {
       log(`⚠ ${name}: フォロワー（オーディエンス）を読めませんでした（${e.message}）。新規フォロワー（純増）なしで続けます`)
       trends = {}
