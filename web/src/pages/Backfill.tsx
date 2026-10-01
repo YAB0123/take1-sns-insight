@@ -31,6 +31,7 @@ export function Backfill() {
   const [redo, setRedo] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [withInsight, setWithInsight] = useState(false)
+  const [insightOnly, setInsightOnly] = useState(false)
   const [running, setRunning] = useState(false)
   const stopRef = useRef(false)
 
@@ -64,8 +65,8 @@ export function Backfill() {
     stopRef.current = false
     let all = [...reports]
     const set = (id: string, s: Status) => setStatus((st) => ({ ...st, [id]: s }))
-    const collected: string[] = []
-    for (const r of pending) {
+    const collected: string[] = insightOnly ? pending.map((r) => r.id) : []
+    for (const r of insightOnly ? [] : pending) {
       if (stopRef.current) break
       try {
         set(r.id, { state: 'running', message: '取込中…' })
@@ -95,7 +96,7 @@ export function Backfill() {
       }
     }
     // 考察は先月の数値と比べるので、全部の月を取り込み終えてから作る。公開中の月は公開内容も更新する
-    if (withInsight && client) {
+    if ((withInsight || insightOnly) && client) {
       for (const id of collected) {
         if (stopRef.current) break
         const r = all.find((x) => x.id === id)!
@@ -163,6 +164,12 @@ export function Backfill() {
           <input type="checkbox" checked={redo} onChange={(e) => setRedo(e.target.checked)} disabled={running} />
           取込済の月も選んで取り直す
         </label>
+        {redo && (
+          <label className="flex items-center gap-1.5 text-sm text-slate-700">
+            <input type="checkbox" checked={insightOnly} onChange={(e) => setInsightOnly(e.target.checked)} disabled={running} />
+            選んだ月は取り込まず、AIの考察だけ作る
+          </label>
+        )}
       </div>
 
       <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
