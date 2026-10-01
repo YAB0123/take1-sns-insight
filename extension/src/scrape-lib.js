@@ -151,10 +151,15 @@
   async function metaTrends() {
     // フォロワーが100人未満のアカウントは「トレンド」が出ず、「Instagramフォロワー N」だけが表示される
     const total = (lines) => lines.findIndex((l) => /^(Instagram|Facebook)フォロワー$/.test(l))
-    const ok = await waitFor(() => {
-      const lines = mainLines()
-      return lines.includes('フォローをやめた数') || total(lines) >= 0
-    })
+    // この画面はグラフが多く、innerText を何度も読むと描画の再計算で固まることがある。待つ間は textContent（再計算なし）で見る
+    const ok = await waitFor(
+      () => {
+        const tc = (document.querySelector('[role=main]') || document.body).textContent
+        return tc.includes('フォローをやめた数') || /(Instagram|Facebook)フォロワー/.test(tc)
+      },
+      25000,
+      1000,
+    )
     if (!ok) throw new Error('Meta「オーディエンス > トレンド」の読み込みがタイムアウトしました')
     await sleep(1500)
     const lines = mainLines()
