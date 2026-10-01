@@ -36,14 +36,32 @@ async function open(tabId, url) {
   await sleep(1500)
 }
 
+const RUN_TIMEOUT = 90000
+
+async function runOnce(tabId, name, args) {
+  await chrome.scripting.executeScript({ target: { tabId }, files: ['src/scrape-lib.js'] })
+  const [res] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: (n, a) => globalThis.__snsScrape[n](...a),
+    args: [name, args],
+  })
+  return res
+}
+
 async function run(tabId, name, ...args) {
   for (let attempt = 0; ; attempt++) {
-    await chrome.scripting.executeScript({ target: { tabId }, files: ['src/scrape-lib.js'] })
-    const [res] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: (n, a) => globalThis.__snsScrape[n](...a),
-      args: [name, args],
-    })
+    // Meta の「オーディエンス」画面などでタブが応答しなくなり、いつまでも返ってこないことがある。
+    // 時間内に返らなければページを読み込み直して1回だけやり直す
+    const timedOut = Symbol('timeout')
+    const res = await Promise.race([runOnce(tabId, name, args), sleep(RUN_TIMEOUT).then(() => timedOut)])
+    if (res === timedOut) {
+      if (attempt >= 1) throw new Error(`画面が応答しませんでした（${name}）`)
+      const loaded = waitComplete(tabId)
+      await chrome.tabs.reload(tabId, { bypassCache: true })
+      await loaded
+      await sleep(3000)
+      continue
+    }
     if (res?.error) throw new Error(res.error.message ?? String(res.error))
     // 読み取り中にページが再読み込み・転送されると結果が空で返る（Meta で時々起きる）。少し待って1回だけやり直す
     if (res?.result != null || attempt >= 1) return res?.result
