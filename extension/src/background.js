@@ -475,7 +475,8 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onDisconnect.addListener(() => void chrome.runtime.lastError)
   port.onMessage.addListener(async (req) => {
     // 管理ページ側からの生存確認（service worker が途中で止められないように送ってもらっている）
-    if (req?.type === 'keepalive') return
+    // 取込の依頼（urls と targets を持つ）以外は無視する
+    if (req?.type === 'keepalive' || !req?.urls || !Array.isArray(req.targets)) return
     const post = (m) => {
       try {
         port.postMessage(m)
