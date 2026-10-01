@@ -20,7 +20,9 @@ const INSIGHT_FIELDS: { key: keyof Insight; label: string; rows: number }[] = [
   { key: 'proposals', label: '来月の提案', rows: 6 },
 ]
 
-const ACCOUNT_FIELDS: { key: keyof AccountMetrics; label: string }[] = [
+type NumericAccountKey = Exclude<keyof AccountMetrics, 'followersEstimated'>
+
+const ACCOUNT_FIELDS: { key: NumericAccountKey; label: string }[] = [
   { key: 'followers', label: 'フォロワー数' },
   { key: 'netFollowers', label: '新規フォロワー（純増）' },
   { key: 'views', label: '閲覧数（アカウント全体）' },
@@ -132,7 +134,7 @@ export function ReportEditor() {
     setBusy(undefined)
   }
 
-  function setAccount(pl: Platform, key: keyof AccountMetrics, value: string) {
+  function setAccount(pl: Platform, key: NumericAccountKey, value: string) {
     const d = report!.platforms[pl] ?? { account: {}, posts: [] }
     const n = value === '' ? undefined : Number(value.replaceAll(',', ''))
     update({ platforms: { ...report!.platforms, [pl]: { ...d, account: { ...d.account, [key]: n } } } })

@@ -49,6 +49,8 @@ export interface Post {
 export interface AccountMetrics {
   /** 取込時点のフォロワー総数（YouTubeは登録者数） */
   followers?: number
+  /** followers が表示用の推計値（新しい月の総数から純増を差し引いたもの）。保存はしない */
+  followersEstimated?: boolean
   /** 期間中のフォロワー純増（フォロー − フォロー解除） */
   netFollowers?: number
   views?: number

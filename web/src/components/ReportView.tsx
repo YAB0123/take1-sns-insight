@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react'
-import { changeRate, fmt, hasData, platformsOf, previousReport, summaryFor } from '../lib/metrics'
+import { useMemo, useState, type ReactNode } from 'react'
+import { changeRate, fmt, hasData, platformsOf, previousReport, summaryFor, withEstimatedFollowers } from '../lib/metrics'
 import type { Report } from '../types'
 import { PLATFORMS, PLATFORM_LABEL } from '../types'
 import { PlatformShare, TrendChart } from './Charts'
@@ -49,7 +49,9 @@ function KpiGrid({ report, prev, tab }: { report: Report; prev?: Report; tab: Ta
         return (
           <div key={spec.label} className="rounded-lg border border-slate-200 bg-white p-3 break-inside-avoid">
             <div className="text-xs text-slate-500">{spec.label}</div>
-            {spec.note && <div className="text-[10px] leading-tight text-slate-400">{spec.note}</div>}
+            {(spec.noteFor?.(s) ?? spec.note) && (
+              <div className="text-[10px] leading-tight text-slate-400">{spec.noteFor?.(s) ?? spec.note}</div>
+            )}
             <div className="mt-1 text-xl font-semibold text-slate-900 tabular-nums">
               {spec.label.includes('純増') && cur != null && cur > 0 ? '+' : ''}
               {fmt(cur, spec.digits ?? 0)}
@@ -146,8 +148,8 @@ export function InsightView({ report }: { report: Report }) {
 }
 
 export function ReportView({
-  report,
-  reports,
+  report: rawReport,
+  reports: rawReports,
   clientName,
   headerRight,
 }: {
@@ -156,6 +158,12 @@ export function ReportView({
   clientName: string
   headerRight?: ReactNode
 }) {
+  // 過去の月のフォロワー総数は表示用に推計して埋める
+  const reports = useMemo(
+    () => withEstimatedFollowers(rawReports.some((r) => r.id === rawReport.id) ? rawReports : [...rawReports, rawReport]),
+    [rawReports, rawReport],
+  )
+  const report = reports.find((r) => r.id === rawReport.id) ?? rawReport
   const tabs: TabKey[] = ['combined', ...PLATFORMS.filter((pl) => hasData(report.platforms[pl]))]
   const [tab, setTab] = useState<TabKey>('combined')
   const active = tabs.includes(tab) ? tab : 'combined'

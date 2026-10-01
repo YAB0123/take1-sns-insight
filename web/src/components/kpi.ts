@@ -19,6 +19,8 @@ export interface KpiSpec {
   points?: boolean
   /** ラベルの下に出す短い説明 */
   note?: string
+  /** 値によって変わる説明（あれば note より優先） */
+  noteFor?: (s: PlatformSummary) => string | undefined
   /** 集計の仕方。先月と違えば先月比を出さない */
   basis?: (s: PlatformSummary) => string
 }
@@ -27,7 +29,12 @@ const views: KpiSpec = { label: '閲覧数', note: 'アカウント全体（過�
 const postViews: KpiSpec = { label: 'ビュー数', note: '期間内に公開した投稿の合計', get: (s) => s.postViews }
 const reach: KpiSpec = { label: 'リーチ数', get: (s) => s.reach }
 const net: KpiSpec = { label: '新規フォロワー（純増）', get: (s) => s.netFollowers }
-const followers: KpiSpec = { label: 'フォロワー数', get: (s) => s.followers, basis: (s) => s.followersBasis ?? '' }
+const followers: KpiSpec = {
+  label: 'フォロワー数',
+  get: (s) => s.followers,
+  basis: (s) => s.followersBasis ?? '',
+  noteFor: (s) => (s.followersEstimated ? '推計（最新の総数から各月の純増を差し引き）' : undefined),
+}
 const posts: KpiSpec = { label: '投稿数', get: (s) => s.postCount }
 const likes: KpiSpec = { label: 'いいね', get: (s) => s.likes }
 const comments: KpiSpec = { label: 'コメント', get: (s) => s.comments }

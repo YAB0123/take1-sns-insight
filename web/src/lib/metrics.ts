@@ -10,6 +10,8 @@ export function hasData(d: PlatformData | undefined): d is PlatformData {
 /** プラットフォームの期間サマリー。投稿の合計で埋め、アカウント指標があればそちらを優先 */
 export interface PlatformSummary {
   followers?: number
+  /** フォロワー総数が推計値 */
+  followersEstimated?: boolean
   netFollowers?: number
   /** 閲覧数：管理画面のアカウント全体の期間合計（無ければ投稿の合計） */
   views: number
@@ -44,6 +46,7 @@ export function summarize(d: PlatformData | undefined): PlatformSummary | undefi
   const postEng = sum(p.map((x) => sum([x.metrics.likes, x.metrics.comments, x.metrics.shares, x.metrics.saves])))
   return {
     followers: a.followers,
+    followersEstimated: a.followersEstimated,
     netFollowers: a.netFollowers,
     views,
     postViews,
@@ -77,6 +80,7 @@ export function combine(report: Report, only: Platform[] = PLATFORMS): PlatformS
     parts.some((x) => x[k] != null) ? sum(parts.map((x) => x[k])) : undefined
   return {
     followers: opt('followers'),
+    followersEstimated: parts.some((x) => x.followersEstimated),
     netFollowers: opt('netFollowers'),
     views: sum(parts.map((x) => x.views)),
     postViews,
@@ -118,4 +122,45 @@ export function engagementOf(p: Post): number | undefined {
   const v = p.metrics.views
   if (!v) return undefined
   return ((p.metrics.likes ?? 0) + (p.metrics.comments ?? 0) + (p.metrics.shares ?? 0) + (p.metrics.saves ?? 0)) / v * 100
+}
+
+/**
+ * 過去の月のフォロワー総数を推計して埋めた（表示用の）レポート一覧を返す。
+ * 各管理画面は今日の総数しか出さないため、総数は最新の月にしか入っていない。
+ * 「1つ新しい月の総数 − その月の純増」を、その前の月末の総数とみなして古い月へさかのぼる。
+ * 純増やデータが欠けた月があれば、そこから前は推計しない。
+ */
+export function withEstimatedFollowers(reports: Report[]): Report[] {
+  const sorted = [...reports].sort((a, b) => b.periodStart.localeCompare(a.periodStart))
+  const out = new Map(sorted.map((r) => [r.id, r]))
+  for (const pl of PLATFORMS) {
+    let known: number | undefined
+    let newerNet: number | undefined
+    for (const r of sorted) {
+      const d = r.platforms[pl]
+      if (!d) {
+        known = undefined
+        continue
+      }
+      const a = d.account
+      if (a.followers != null) {
+        known = a.followers
+        newerNet = a.netFollowers
+        continue
+      }
+      if (known == null || newerNet == null || known - newerNet < 0) {
+        known = undefined
+        continue
+      }
+      const est = known - newerNet
+      const cur = out.get(r.id)!
+      out.set(r.id, {
+        ...cur,
+        platforms: { ...cur.platforms, [pl]: { ...d, account: { ...a, followers: est, followersEstimated: true } } },
+      })
+      known = est
+      newerNet = a.netFollowers
+    }
+  }
+  return reports.map((r) => out.get(r.id)!)
 }
