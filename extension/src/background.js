@@ -368,7 +368,16 @@ function ytExploreUrl(channel, from, to, videoId, shortsOnly = false) {
 const normTitle = (s) => (s || '').replace(/\s+/g, '').replace(/#\S+/g, '')
 
 /** YouTube Studio の期間は太平洋時間0時のミリ秒（終了は最終日の翌日0時） */
-const laStart = (d) => Date.parse(`${d}T00:00:00-07:00`)
+// 夏時間（-07:00）と冬時間（-08:00）があるので、その日の太平洋時間0時になる方を選ぶ
+const LA_HOUR = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: '2-digit', hourCycle: 'h23' })
+const laStart = (d) => {
+  for (const off of ['-07:00', '-08:00']) {
+    const t = Date.parse(`${d}T00:00:00${off}`)
+    if (LA_HOUR.format(t) === '00') return t
+  }
+  return Date.parse(`${d}T00:00:00-08:00`)
+}
+const nextDay = (d) => new Date(Date.parse(`${d}T00:00:00Z`) + DAY).toISOString().slice(0, 10)
 
 async function youtubeChannel(tabId, url) {
   const fromUrl = url.match(/\/channel\/(UC[\w-]+)/)?.[1]
@@ -383,7 +392,7 @@ async function youtubeChannel(tabId, url) {
 
 async function collectYouTube(tabId, req, log) {
   const channel = await youtubeChannel(tabId, req.urls.youtube)
-  const [from, to] = [laStart(req.periodStart), laStart(req.periodEnd) + DAY]
+  const [from, to] = [laStart(req.periodStart), laStart(nextDay(req.periodEnd))]
 
   log('YouTube: 期間の数値を読み取り中…')
   await open(tabId, `https://studio.youtube.com/channel/${channel}/analytics/tab-overview/period-${from},${to}`)

@@ -100,8 +100,15 @@ function jstMidnight(date: string): number {
   return Date.parse(`${date}T00:00:00+09:00`)
 }
 /** YYYY-MM-DD を太平洋時間0時のミリ秒に（夏時間は YouTube Studio 側が吸収するので PDT 固定で十分） */
+const LA_HOUR = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: '2-digit', hourCycle: 'h23' })
+
+/** その日の太平洋時間0時（夏時間 -07:00 / 冬時間 -08:00） */
 function laMidnight(date: string): number {
-  return Date.parse(`${date}T00:00:00-07:00`)
+  for (const off of ['-07:00', '-08:00']) {
+    const t = Date.parse(`${date}T00:00:00${off}`)
+    if (LA_HOUR.format(t) === '00') return t
+  }
+  return Date.parse(`${date}T00:00:00-08:00`)
 }
 
 /** 保存済みIDと期間から3つのURLを組み立てる */
@@ -119,7 +126,7 @@ export function buildUrls(ids: Client['ids'], start: string, end: string): Repor
   }
   urls.tiktok = `https://www.tiktok.com/tiktokstudio/analytics?dateRange=${encodeURIComponent(JSON.stringify(dateRange))}`
   if (ids?.youtubeChannelId) {
-    urls.youtube = `https://studio.youtube.com/channel/${ids.youtubeChannelId}/analytics/tab-overview/period-${laMidnight(start)},${laMidnight(end) + DAY_MS}`
+    urls.youtube = `https://studio.youtube.com/channel/${ids.youtubeChannelId}/analytics/tab-overview/period-${laMidnight(start)},${laMidnight(new Date(Date.parse(`${end}T00:00:00Z`) + DAY_MS).toISOString().slice(0, 10))}`
   }
   return urls
 }
