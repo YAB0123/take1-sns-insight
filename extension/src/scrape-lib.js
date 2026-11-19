@@ -364,10 +364,23 @@
 
   /** チャンネル アナリティクス概要：期間の視聴回数・総再生時間・登録者増減・現在の登録者数 */
   async function ytOverview() {
-    const ok = await waitFor(() => mainLines().includes('総再生時間（単位: 時間）'))
+    const NEW_UI = 'チャンネルに関する分析情報'
+    const ok = await waitFor(() => {
+      const l = mainLines()
+      return l.includes('総再生時間（単位: 時間）') || (l.includes(NEW_UI) && l.includes('チャンネル登録者数'))
+    })
     if (!ok) throw new Error('YouTube アナリティクス概要の読み込みがタイムアウトしました')
     await sleep(1500)
     const lines = mainLines()
+    // 2026年11月からの新しいアナリティクス画面：期間指定のURLを開いても直近28日間の画面に転送される。
+    // 期間の数値は詳細モードの表から取るので、ここでは登録者の総数（リアルタイム欄。「+」の付かない数）だけ読む
+    if (lines.includes(NEW_UI)) {
+      let followers
+      lines.forEach((l, i) => {
+        if (l === 'チャンネル登録者数' && /^[\d,]+$/.test(lines[i + 1] ?? '')) followers = num(lines[i + 1])
+      })
+      return { followers }
+    }
     const m = lines.join('\n').match(/チャンネル視聴回数は\s*([\d,]+)\s*回/)
     // リアルタイム欄：「6,384」「チャンネル登録者」
     const subIdx = lines.findIndex((l, i) => l === 'チャンネル登録者' && num(lines[i - 1]) != null && lines.slice(Math.max(0, i - 4), i).includes('リアルタイム更新'))

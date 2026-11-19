@@ -387,7 +387,8 @@ async function collectYouTube(tabId, req, log) {
 
   log('YouTube: 期間の数値を読み取り中…')
   await open(tabId, `https://studio.youtube.com/channel/${channel}/analytics/tab-overview/period-${from},${to}`)
-  const overview = await run(tabId, 'ytOverview')
+  // 概要画面は登録者の総数を読むだけ。読めなくても期間の数値（詳細モードの表）は取り込む
+  const overview = (await run(tabId, 'ytOverview').catch((e) => log(`⚠ YouTube: 登録者数を読めませんでした（${e.message}）`))) ?? {}
   await open(tabId, ytExploreUrl(channel, from, to))
   const channelTable = await run(tabId, 'ytExplore')
   // 閲覧数などはショートだけで数える（CMを広告で回すとチャンネル全体の視聴回数が大きく膨らむため）
